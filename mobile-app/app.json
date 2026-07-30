@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "PlantPanda",
+    "slug": "plantpanda",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#16a34a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "config": {
+        "googleMapsApiKey": "AIzaSyBCbJepmKDqoR0oAqd-GZkDkT19uFlJR08"
+      }
+    },
+    "android": {
+      "package": "com.plantpanda.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyBCbJepmKDqoR0oAqd-GZkDkT19uFlJR08"
+        }
+      }
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "PlantPanda needs your location to show live delivery tracking."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://192.168.2.113:5000/api",
+      "socketUrl": "http://192.168.2.113:5000"
+    }
+  }
+}
