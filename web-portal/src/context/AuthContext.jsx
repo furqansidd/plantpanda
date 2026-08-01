@@ -10,12 +10,18 @@ export function AuthProvider({ children }) {
 
   const refresh = useCallback(async () => {
     try {
+      const token = localStorage.getItem('plantpanda_token');
+      if (!token) {
+        setUser(null);
+        setLoading(false);
+        return;
+      }
       const { data } = await authApi.me();
       setUser(data.user);
       connectSocket();
     } catch {
+      localStorage.removeItem('plantpanda_token');
       setUser(null);
-      localStorage.removeItem('pp_token');
     } finally {
       setLoading(false);
     }
@@ -28,7 +34,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     const { data } = await authApi.login({ email, password });
     if (data.token) {
-      localStorage.setItem('pp_token', data.token);
+      localStorage.setItem('plantpanda_token', data.token);
     }
     setUser(data.user);
     connectSocket();
@@ -38,7 +44,7 @@ export function AuthProvider({ children }) {
   const register = async (payload) => {
     const { data } = await authApi.register(payload);
     if (data.token) {
-      localStorage.setItem('pp_token', data.token);
+      localStorage.setItem('plantpanda_token', data.token);
     }
     setUser(data.user);
     connectSocket();
@@ -49,9 +55,9 @@ export function AuthProvider({ children }) {
     try {
       await authApi.logout();
     } catch {
-      // ignore errors on logout
+      // ignore
     }
-    localStorage.removeItem('pp_token');
+    localStorage.removeItem('plantpanda_token');
     setUser(null);
     disconnectSocket();
   };

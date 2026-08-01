@@ -66,11 +66,6 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(401, 'Invalid email or password');
   }
 
-  if (user.role === 'rider' && user.isApproved && user.activeRole !== 'rider') {
-    user.activeRole = 'rider';
-    await user.save();
-  }
-
   const token = signToken({ userId: user._id.toString(), role: user.role });
   setAuthCookie(res, token);
 

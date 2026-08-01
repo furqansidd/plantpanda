@@ -9,6 +9,7 @@ import { startDispatch } from '../services/dispatchService';
 import { recordCashCollection, isRiderGloballyBlocked } from '../services/ledgerService';
 import { asyncHandler, ApiError } from '../utils/asyncHandler';
 import { getIO } from '../sockets';
+import { getRoadRoute } from '../services/routeService';
 
 /** Customer: place a new order. */
 export const createOrder = asyncHandler(async (req: Request, res: Response) => {
@@ -81,6 +82,7 @@ export const acceptOrder = asyncHandler(async (req: Request, res: Response) => {
   await order.save();
 
   getIO().to(`customer:${order.customerId}`).emit('order:statusUpdate', { orderId: order._id, status: order.status });
+  getIO().to(`business:${order.businessId}`).emit('order:statusUpdate', { orderId: order._id, status: order.status });
   res.json({ success: true, order: toBusinessView(order) });
 });
 
@@ -114,6 +116,8 @@ export const verifyPickupPIN = asyncHandler(async (req: Request, res: Response) 
   const io = getIO();
   io.to(`customer:${order.customerId}`).emit('order:statusUpdate', { orderId: order._id, status: order.status });
   io.to(`rider:${order.riderId}`).emit('order:statusUpdate', { orderId: order._id, status: order.status });
+  io.to(`business:${order.businessId}`).emit('order:statusUpdate', { orderId: order._id, status: order.status });
+  io.to(`order:${order._id}`).emit('order:statusUpdate', { orderId: order._id, status: order.status });
   io.to(`order:${order._id}`).emit('order:phaseChange', { orderId: order._id, phase: 'delivery' }); // switches polyline nursery -> customer
 
   res.json({ success: true, order: toBusinessView(order) });
@@ -209,13 +213,19 @@ export const getMyOrdersAsRider = asyncHandler(async (req: Request, res: Respons
   res.json({ success: true, orders: orders.map(toRiderView) });
 });
 
-/** Business: orders for own business, commission fields stripped. */
+/** Business: orders for business accounts, commission fields stripped. */
 export const getMyOrdersAsBusiness = asyncHandler(async (req: Request, res: Response) => {
-  const business = await Business.findOne({ userId: req.user!._id });
-  if (!business) throw new ApiError(404, 'Business profile not found');
+  const { status, businessId } = req.query;
+  const filter: any = {};
 
-  const { status } = req.query;
-  const filter: any = { businessId: business._id };
+  if (req.user!.role === 'super_admin') {
+    if (businessId) filter.businessId = businessId;
+  } else {
+    const business = await Business.findOne({ userId: req.user!._id });
+    if (!business) throw new ApiError(404, 'Business profile not found');
+    filter.businessId = business._id;
+  }
+
   if (status) filter.status = status;
 
   const orders = await Order.find(filter).sort({ createdAt: -1 });
@@ -223,7 +233,7 @@ export const getMyOrdersAsBusiness = asyncHandler(async (req: Request, res: Resp
 });
 
 export const getOrderById = asyncHandler(async (req: Request, res: Response) => {
-  const order = await Order.findById(req.params.orderId);
+  const order = await Order.findById(req.params.orderId).populate('riderId', 'name phone currentLocation');
   if (!order) throw new ApiError(404, 'Order not found');
 
   const role = req.user!.role;
@@ -236,9 +246,49 @@ export const getOrderById = asyncHandler(async (req: Request, res: Response) => 
   res.json({ success: true, order: view });
 });
 
+/**
+ * Live road-following route for tracking maps. Called repeatedly (throttled
+ * client-side) with the rider's current position as `originLng`/`originLat`.
+ * Destination is picked automatically from order status:
+ *  - rider_assigned (phase: pickup)  -> nursery/business pickup location
+ *  - picked_up       (phase: delivery) -> customer drop-off location
+ * The destination marker never moves; only this route line updates.
+ */
+export const getOrderRoute = asyncHandler(async (req: Request, res: Response) => {
+  const { orderId } = req.params;
+  const { originLng, originLat } = req.query;
+
+  if (originLng === undefined || originLat === undefined) {
+    throw new ApiError(400, 'originLng and originLat are required');
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) throw new ApiError(404, 'Order not found');
+
+  const origin: [number, number] = [parseFloat(originLng as string), parseFloat(originLat as string)];
+  const destination =
+    order.status === 'picked_up'
+      ? (order.deliveryLocation.coordinates as [number, number])
+      : (order.pickupLocation.coordinates as [number, number]);
+
+  const route = await getRoadRoute(origin, destination);
+
+  res.json({
+    success: true,
+    phase: order.status === 'picked_up' ? 'delivery' : 'pickup',
+    route,
+  });
+});
+
 // ---- helpers -------------------------------------------------------------
 
 async function requireOwnedOrder(req: Request) {
+  if (req.user!.role === 'super_admin') {
+    const order = await Order.findById(req.params.orderId);
+    if (!order) throw new ApiError(404, 'Order not found');
+    return order;
+  }
+
   const business = await Business.findOne({ userId: req.user!._id });
   if (!business) throw new ApiError(404, 'Business profile not found');
 

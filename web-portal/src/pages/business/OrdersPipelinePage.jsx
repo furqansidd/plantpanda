@@ -6,43 +6,57 @@ export default function OrdersPipelinePage() {
   const [orders, setOrders] = useState([]);
   const [pinModalOrder, setPinModalOrder] = useState(null);
   const [pinInput, setPinInput] = useState('');
-  const [error, setError] = useState('');
+  const [loadingOrderId, setLoadingOrderId] = useState(null);
+  const [actionError, setActionError] = useState('');
+  const [modalError, setModalError] = useState('');
 
-  const load = () => orderApi.mineAsBusiness().then((res) => setOrders(res.data.orders));
+  const load = () =>
+    orderApi
+      .mineAsBusiness()
+      .then((res) => setOrders(res.data.orders))
+      .catch((err) => console.error('Failed to load orders', err));
 
   useEffect(() => {
     load();
-    const interval = setInterval(load, 8000); // simple polling refresh alongside socket events
+    const interval = setInterval(load, 5000); // simple polling refresh alongside socket events
     return () => clearInterval(interval);
   }, []);
 
   const accept = async (id) => {
+    setActionError('');
+    setLoadingOrderId(id);
     try {
       await orderApi.accept(id);
-      load();
+      await load();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to accept order. Make sure your business account is approved.');
+      setActionError(err.response?.data?.message || 'Failed to accept order. Please check account status.');
+    } finally {
+      setLoadingOrderId(null);
     }
   };
 
   const markReady = async (id) => {
+    setActionError('');
+    setLoadingOrderId(id);
     try {
       await orderApi.markReady(id);
-      load();
+      await load();
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to mark order ready for pickup.');
+      setActionError(err.response?.data?.message || 'Failed to mark order ready');
+    } finally {
+      setLoadingOrderId(null);
     }
   };
 
   const submitPickupPin = async () => {
-    setError('');
+    setModalError('');
     try {
       await orderApi.verifyPickupPIN(pinModalOrder._id, pinInput);
       setPinModalOrder(null);
       setPinInput('');
       load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Invalid PIN');
+      setModalError(err.response?.data?.message || 'Invalid PIN');
     }
   };
 
@@ -57,6 +71,12 @@ export default function OrdersPipelinePage() {
 
   return (
     <div className="space-y-6">
+      {actionError && (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs flex justify-between items-center">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError('')} className="font-bold ml-2">✕</button>
+        </div>
+      )}
       {groups.map((g) => {
         const list = orders.filter((o) => o.status === g.status);
         if (list.length === 0) return null;
@@ -76,13 +96,21 @@ export default function OrdersPipelinePage() {
                   <p className="text-xs text-neutral-400 mt-2">Deliver to: {o.deliveryAddress}</p>
 
                   {o.status === 'pending' && (
-                    <button onClick={() => accept(o._id)} className="btn-primary text-sm mt-3 w-full">
-                      Accept Order
+                    <button
+                      disabled={loadingOrderId === o._id}
+                      onClick={() => accept(o._id)}
+                      className="btn-primary text-sm mt-3 w-full disabled:opacity-50"
+                    >
+                      {loadingOrderId === o._id ? 'Accepting...' : 'Accept Order'}
                     </button>
                   )}
                   {o.status === 'accepted' && (
-                    <button onClick={() => markReady(o._id)} className="btn-primary text-sm mt-3 w-full">
-                      Mark Ready for Pickup
+                    <button
+                      disabled={loadingOrderId === o._id}
+                      onClick={() => markReady(o._id)}
+                      className="btn-primary text-sm mt-3 w-full disabled:opacity-50"
+                    >
+                      {loadingOrderId === o._id ? 'Updating...' : 'Mark Ready for Pickup'}
                     </button>
                   )}
                   {o.status === 'ready_for_pickup' && (
@@ -92,7 +120,7 @@ export default function OrdersPipelinePage() {
                     <button
                       onClick={() => {
                         setPinModalOrder(o);
-                        setError('');
+                        setModalError('');
                       }}
                       className="btn-primary text-sm mt-3 w-full"
                     >
@@ -121,7 +149,7 @@ export default function OrdersPipelinePage() {
               className="w-full text-center text-2xl tracking-[0.5em] border border-neutral-200 rounded-xl px-3 py-2 mb-3"
               placeholder="----"
             />
-            {error && <p className="text-red-600 text-xs mb-2">{error}</p>}
+            {modalError && <p className="text-red-600 text-xs mb-2">{modalError}</p>}
             <div className="flex gap-2">
               <button onClick={() => setPinModalOrder(null)} className="btn-secondary flex-1">Cancel</button>
               <button onClick={submitPickupPin} className="btn-primary flex-1">Confirm</button>

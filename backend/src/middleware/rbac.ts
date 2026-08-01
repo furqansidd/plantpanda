@@ -13,4 +13,4 @@ export function requireRole(...roles: UserRole[]) {
 }
 
 /** For endpoints usable by both branch and nursery business accounts. */
-export const requireBusinessOwner = requireRole('branch', 'nursery');
+export const requireBusinessOwner = requireRole('super_admin', 'branch', 'nursery');

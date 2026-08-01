@@ -29,6 +29,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 export function requireApproved(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === 'super_admin') return next();
   if (!req.user?.isApproved) {
     return next(new ApiError(403, 'Your account is pending approval'));
   }

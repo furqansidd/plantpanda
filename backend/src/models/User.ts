@@ -69,11 +69,10 @@ UserSchema.methods.comparePassword = async function (candidate: string): Promise
   return bcrypt.compare(candidate, this.password);
 };
 
+// Riders and branch/nursery accounts default to pending approval
 UserSchema.pre('validate', function (next) {
   if ((this.role === 'branch' || this.role === 'nursery' || this.role === 'rider') && this.isNew) {
-    if (this.isApproved === undefined) {
-      this.isApproved = false;
-    }
+    this.isApproved = false;
   }
   next();
 });

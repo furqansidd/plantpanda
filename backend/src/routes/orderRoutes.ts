@@ -10,6 +10,7 @@ import {
   getMyOrdersAsRider,
   getMyOrdersAsBusiness,
   getOrderById,
+  getOrderRoute,
 } from '../controllers/orderController';
 import { requireAuth, requireApproved } from '../middleware/auth';
 import { requireRole, requireBusinessOwner } from '../middleware/rbac';
@@ -31,6 +32,7 @@ router.get('/mine/rider', requireAuth, requireRole('rider'), getMyOrdersAsRider)
 router.post('/:orderId/verify-delivery-pin', requireAuth, requireRole('rider'), verifyDeliveryPIN);
 
 // Shared
+router.get('/:orderId/route', requireAuth, getOrderRoute);
 router.get('/:orderId', requireAuth, getOrderById);
 router.patch('/:orderId/cancel', requireAuth, cancelOrder);
 

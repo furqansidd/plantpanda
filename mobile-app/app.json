@@ -12,7 +12,7 @@
     "ios": {
       "supportsTablet": true,
       "config": {
-        "googleMapsApiKey": "AIzaSyBCbJepmKDqoR0oAqd-GZkDkT19uFlJR08"
+        "googleMapsApiKey": "YOUR_IOS_GOOGLE_MAPS_KEY"
       }
     },
     "android": {
@@ -25,7 +25,7 @@
       ],
       "config": {
         "googleMaps": {
-          "apiKey": "AIzaSyBCbJepmKDqoR0oAqd-GZkDkT19uFlJR08"
+          "apiKey": "YOUR_ANDROID_GOOGLE_MAPS_KEY"
         }
       }
     },
@@ -38,8 +38,8 @@
       ]
     ],
     "extra": {
-      "apiUrl": "http://192.168.2.113:5000/api",
-      "socketUrl": "http://192.168.2.113:5000"
+      "apiUrl": "http://192.168.2.47:5000/api",
+      "socketUrl": "http://192.168.2.47:5000"
     }
   }
 }

@@ -23,6 +23,7 @@ export const env = {
   CLIENT_ORIGIN: (process.env.CLIENT_ORIGIN || 'http://localhost:5173').split(','),
 
   GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY || '',
+  ORS_API_KEY: process.env.ORS_API_KEY || '',
 
   DISPATCH_INITIAL_RADIUS_KM: parseFloat(process.env.DISPATCH_INITIAL_RADIUS_KM || '5'),
   DISPATCH_EXPANDED_RADIUS_KM: parseFloat(process.env.DISPATCH_EXPANDED_RADIUS_KM || '8'),

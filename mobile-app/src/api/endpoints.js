@@ -16,6 +16,7 @@ export const orderApi = {
   mineAsCustomer: () => api.get('/orders/mine/customer'),
   mineAsRider: () => api.get('/orders/mine/rider'),
   getById: (orderId) => api.get(`/orders/${orderId}`),
+  getRoute: (orderId, lng, lat) => api.get(`/orders/${orderId}/route`, { params: { originLng: lng, originLat: lat } }),
   verifyDeliveryPIN: (orderId, pin, proofOfDeliveryUrl) =>
     api.post(`/orders/${orderId}/verify-delivery-pin`, { pin, proofOfDeliveryUrl }),
   cancel: (orderId, reason) => api.patch(`/orders/${orderId}/cancel`, { reason }),

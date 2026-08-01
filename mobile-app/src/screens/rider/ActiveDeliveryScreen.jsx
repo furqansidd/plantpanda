@@ -1,18 +1,38 @@
-import { useEffect, useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
+import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import { orderApi } from '../../api/endpoints';
-import { getSocket } from '../../api/socket';
+import { orderApi, riderApi } from '../../api/endpoints';
+import { connectSocket } from '../../api/socket';
+import { useLiveRoute } from '../../hooks/useLiveRoute';
 import StatusBadge from '../../components/StatusBadge';
 
 export default function ActiveDeliveryScreen({ route, navigation }) {
   const { orderId } = route.params;
   const [order, setOrder] = useState(null);
+  const [myPos, setMyPos] = useState(null); // rider's own live position
   const [pin, setPin] = useState('');
   const [photoUri, setPhotoUri] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const watchSubRef = useRef(null);
+
+  const phase = order ? (order.status === 'rider_assigned' ? 'pickup' : 'delivery') : 'pickup';
+
+  // Same road-following route as the customer sees, driven by MY live position
+  // toward whichever destination the backend says is current (nursery or customer).
+  const { points: routePoints, eta } = useLiveRoute(orderId, myPos, phase);
 
   const load = useCallback(async () => {
     const { data } = await orderApi.getById(orderId);
@@ -21,14 +41,52 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
 
   useEffect(() => {
     load();
-    const socket = getSocket();
-    if (!socket) return;
-    socket.emit('order:join', orderId);
+    let socket = null;
+
     const onStatusUpdate = () => load();
-    socket.on('order:statusUpdate', onStatusUpdate);
+
+    const setupSocket = async () => {
+      socket = await connectSocket();
+      if (!socket || typeof socket.emit !== 'function') return;
+
+      socket.emit('order:join', orderId);
+      socket.on('order:statusUpdate', onStatusUpdate);
+    };
+
+    setupSocket();
+
+    // Watch my own GPS while this delivery is active, pinging with activeOrderId
+    // so the backend broadcasts to the order-specific room the customer is
+    // listening on (without this, the customer never sees live movement).
+    let cancelled = false;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || cancelled) return;
+      watchSubRef.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 15 },
+        (loc) => {
+          const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+          setMyPos(pos);
+          riderApi.pingLocation(loc.coords.longitude, loc.coords.latitude, orderId);
+          const s = getSocket();
+          if (s && typeof s.emit === 'function') {
+            s.emit('rider:location', {
+              lng: loc.coords.longitude,
+              lat: loc.coords.latitude,
+              activeOrderId: orderId,
+            });
+          }
+        }
+      );
+    })();
+
     return () => {
-      socket.emit('order:leave', orderId);
-      socket.off('order:statusUpdate', onStatusUpdate);
+      cancelled = true;
+      watchSubRef.current?.remove();
+      if (socket && typeof socket.emit === 'function') {
+        socket.emit('order:leave', orderId);
+        socket.off('order:statusUpdate', onStatusUpdate);
+      }
     };
   }, [orderId, load]);
 
@@ -47,8 +105,6 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
     setBusy(true);
     setError('');
     try {
-      // NOTE: in production, photoUri would be uploaded to object storage first;
-      // this MVP passes a placeholder URL string to keep the flow complete end-to-end.
       const { data } = await orderApi.verifyDeliveryPIN(orderId, pin, photoUri ? 'uploaded-pod-photo.jpg' : undefined);
       Alert.alert(
         'Delivered! 🎉',
@@ -75,28 +131,28 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
 
   const nursery = { latitude: order.pickupLocation.coordinates[1], longitude: order.pickupLocation.coordinates[0] };
   const dropoff = { latitude: order.deliveryLocation.coordinates[1], longitude: order.deliveryLocation.coordinates[0] };
-  const phase = order.status === 'rider_assigned' ? 'pickup' : 'delivery';
 
   return (
-    <View className="flex-1 bg-white">
+    <KeyboardAvoidingView className="flex-1 bg-white" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <MapView
-        style={{ flex: 1 }}
+        style={{ flex: 1, minHeight: 220 }}
         initialRegion={{ latitude: nursery.latitude, longitude: nursery.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
       >
         <Marker coordinate={nursery} title="Nursery / Pickup" pinColor="green" />
         <Marker coordinate={dropoff} title="Customer Drop-off" pinColor="red" />
-        <Polyline
-          coordinates={phase === 'pickup' ? [nursery] : [nursery, dropoff]}
-          strokeColor="#16a34a"
-          strokeWidth={4}
-        />
+        {myPos && <Marker coordinate={myPos} title="You" pinColor="orange" />}
+        {routePoints.length > 1 && <Polyline coordinates={routePoints} strokeColor="#16a34a" strokeWidth={4} />}
       </MapView>
 
-      <View className="p-5 border-t border-neutral-100">
+      <ScrollView className="border-t border-neutral-100" contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
         <View className="flex-row justify-between items-center mb-3">
           <Text className="font-semibold">Order #{order._id.slice(-6)}</Text>
           <StatusBadge status={order.status} />
         </View>
+
+        {eta && eta.durationMin > 0 && (
+          <Text className="text-neutral-400 text-xs mb-3">~{eta.durationMin} min • {eta.distanceKm} km to go</Text>
+        )}
 
         {phase === 'pickup' ? (
           <View className="bg-purple-50 rounded-xl p-4">
@@ -121,6 +177,7 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
               onChangeText={(v) => setPin(v.replace(/\D/g, ''))}
               placeholder="----"
               className="border border-neutral-200 rounded-xl px-4 py-3 mb-3 text-center text-2xl tracking-widest"
+              returnKeyType="done"
             />
 
             <TouchableOpacity onPress={takePhoto} className="border border-neutral-200 rounded-xl py-3 items-center mb-3">
@@ -141,7 +198,7 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         )}
-      </View>
-    </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

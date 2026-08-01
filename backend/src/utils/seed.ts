@@ -9,6 +9,9 @@ async function seed() {
   await connectDB();
   await PlatformConfig.getSingleton();
 
+  await User.updateMany({}, { isApproved: true });
+  await Business.updateMany({}, { status: 'approved' });
+
   const existingAdmin = await User.findOne({ email: 'admin@plantpanda.com' });
   if (!existingAdmin) {
     await User.create({
@@ -102,9 +105,6 @@ async function seed() {
     });
     console.log('Created sample customer: customer@plantpanda.com / customer1234');
   }
-
-  await User.updateMany({ role: { $in: ['nursery', 'branch', 'rider'] } }, { isApproved: true });
-  console.log('Approved all nursery and rider accounts.');
 
   console.log('Seeding complete.');
   await mongoose.connection.close();

@@ -10,11 +10,12 @@ export async function connectSocket() {
   const token = await getToken();
   if (!token) return null;
 
+  if (socket && socket.connected) return socket;
   if (socket) socket.disconnect();
 
   socket = io(SOCKET_URL, {
     auth: { token },
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
   });
   return socket;
 }

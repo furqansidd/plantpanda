@@ -1,5 +1,11 @@
 import mongoose from 'mongoose';
+import dns from 'dns';
 import { env } from './env';
+
+try {
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+} catch (e) {}
+dns.setDefaultResultOrder('ipv4first');
 
 export async function connectDB(): Promise<void> {
   mongoose.set('strictQuery', true);
