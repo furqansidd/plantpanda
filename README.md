@@ -125,10 +125,16 @@ Scan the QR code with Expo Go, or run `npm run ios` / `npm run android` with a s
    fires the Redis dispatch broadcast.
 5. In the mobile app, switch to Rider Mode (or log in as `rider@plantpanda.com`), go online,
    accept the dispatch modal.
-6. Nursery portal: **Verify Rider Pickup PIN** (shown to the rider on their Active Delivery
-   screen).
-7. Rider app: enter the customer's delivery PIN (shown on the customer's Tracking screen) to
+6. **Live GPS Tracking & Route Phase 1 (Rider → Nursery)**:
+   - **Customer Map Side**: Open the order **Tracking Screen**. The customer sees the live orange **Rider Marker** moving in real time (`rider:locationUpdate` socket stream) and a green road polyline connecting the rider's live position to the **Nursery (Pickup Location)**.
+   - **Rider Map Side**: The rider's app (`ActiveDeliveryScreen`) tracks device GPS via `Location.watchPositionAsync`, streams location pings, and displays the turn-by-turn road route to the Nursery along with the rider's 4-digit **Pickup PIN**.
+7. Nursery portal: Click **Verify Rider Pickup PIN** and enter the 4-digit PIN shown on the rider's screen.
+8. **Live Route & Map Switch (Phase 2: Nursery → Customer Drop-off)**:
+   - Upon verification, the backend updates the order status to `picked_up` and emits `order:phaseChange` (`phase: 'delivery'`).
+   - Both **Customer** and **Rider** map screens automatically detect the phase change (`useLiveRoute`), clearing the previous route cache and instantly recalculating the road route from the rider's current position to the **Customer's Drop-off Address**.
+   - The customer continues to watch the captain's live movement on their map in real time as the rider moves toward their home.
+9. Rider app: enter the customer's delivery PIN (shown on the customer's Tracking screen) to
    complete delivery — watch the Cash Balances screen update, and check the nursery's
    **Rider Cash Ledger** page shows the identical outstanding amount.
-8. As Super Admin, check **Commission** — the commission earned on that order is visible
-   there and nowhere else.
+10. As Super Admin, check **Commission** — the commission earned on that order is visible
+    there and nowhere else.
