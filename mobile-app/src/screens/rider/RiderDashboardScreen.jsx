@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Switch, Modal, ActivityIndicator, Alert }
 import * as Location from 'expo-location';
 import { AlertTriangle } from 'lucide-react-native';
 import { riderApi } from '../../api/endpoints';
-import { getSocket, connectSocket } from '../../api/socket';
+import { getActiveSocket, connectSocket } from '../../api/socket';
 import { useAuth } from '../../context/AuthContext';
 
 export default function RiderDashboardScreen({ navigation }) {
@@ -24,20 +24,24 @@ export default function RiderDashboardScreen({ navigation }) {
 
   useEffect(() => {
     loadLedgers();
-    let socket = getSocket();
+    let ioClient = getActiveSocket();
 
     const setupSocket = async () => {
-      socket = socket || (await connectSocket());
-      if (!socket) return;
-      socket.on('order:available', (offer) => setDispatchOffer(offer));
-      socket.on('ledger:updated', () => loadLedgers());
+      try {
+        ioClient = ioClient || (await connectSocket());
+        if (!ioClient) return;
+        ioClient.on('order:available', (offer) => setDispatchOffer(offer));
+        ioClient.on('ledger:updated', () => loadLedgers());
+      } catch (err) {
+        console.warn('Dashboard socket error:', err.message);
+      }
     };
     setupSocket();
 
     return () => {
-      if (socket) {
-        socket.off('order:available');
-        socket.off('ledger:updated');
+      if (ioClient) {
+        ioClient.off('order:available');
+        ioClient.off('ledger:updated');
       }
     };
   }, [loadLedgers]);
@@ -53,11 +57,16 @@ export default function RiderDashboardScreen({ navigation }) {
         await riderApi.goOnline(pos.coords.longitude, pos.coords.latitude);
 
         const sub = await Location.watchPositionAsync(
-          { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 15 },
+          { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 5 },
           (loc) => {
-            riderApi.pingLocation(loc.coords.longitude, loc.coords.latitude);
-            const socket = getSocket();
-            socket?.emit('rider:location', { lng: loc.coords.longitude, lat: loc.coords.latitude });
+            if (!loc?.coords) return;
+            try {
+              riderApi.pingLocation(loc.coords.longitude, loc.coords.latitude);
+              const activeIo = getActiveSocket();
+              activeIo?.emit('rider:location', { lng: loc.coords.longitude, lat: loc.coords.latitude });
+            } catch (err) {
+              console.warn('Online ping error:', err.message);
+            }
           }
         );
         setWatchSub(sub);
