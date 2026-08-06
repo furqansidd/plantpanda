@@ -4,27 +4,31 @@ import { getToken } from './client';
 
 const SOCKET_URL = Constants.expoConfig?.extra?.socketUrl || 'http://localhost:5000';
 
-let socket = null;
+let globalSocketInstance = null;
 
 export async function connectSocket() {
   const token = await getToken();
   if (!token) return null;
 
-  if (socket && socket.connected) return socket;
-  if (socket) socket.disconnect();
+  if (globalSocketInstance && globalSocketInstance.connected) return globalSocketInstance;
+  if (globalSocketInstance) globalSocketInstance.disconnect();
 
-  socket = io(SOCKET_URL, {
+  globalSocketInstance = io(SOCKET_URL, {
     auth: { token },
     transports: ['websocket', 'polling'],
   });
-  return socket;
+  return globalSocketInstance;
+}
+
+export function getActiveSocket() {
+  return globalSocketInstance;
 }
 
 export function getSocket() {
-  return socket;
+  return globalSocketInstance;
 }
 
 export function disconnectSocket() {
-  if (socket?.connected) socket.disconnect();
-  socket = null;
+  if (globalSocketInstance?.connected) globalSocketInstance.disconnect();
+  globalSocketInstance = null;
 }
