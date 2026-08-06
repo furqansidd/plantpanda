@@ -4,9 +4,9 @@
   "description": "PlantPanda backend API - plant delivery marketplace with live GPS tracking, dynamic dispatch, multi-tenant portals, and COD cash ledger reconciliation.",
   "main": "dist/server.js",
   "scripts": {
-    "dev": "nodemon --exec ts-node src/server.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "dev": "node api.js && nodemon --exec ts-node src/server.ts",
+    "build": "node api.js && tsc -p tsconfig.json",
+    "start": "node api.js && node dist/server.js",
     "seed": "ts-node src/utils/seed.ts"
   },
   "dependencies": {
