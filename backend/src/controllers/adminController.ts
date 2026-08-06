@@ -33,44 +33,45 @@ export const getGlobalDashboard = asyncHandler(async (req: Request, res: Respons
   });
 });
 
-/** Superadmin ONLY: commission earned per business — never exposed to business or rider views. */
+/** Superadmin ONLY: commission earned per business — includes all registered branches & nurseries. */
 export const getCommissionSummary = asyncHandler(async (req: Request, res: Response) => {
-  const summary = await Order.aggregate([
-    { $match: { status: 'delivered' } },
-    {
-      $group: {
-        _id: '$businessId',
-        totalCommission: { $sum: '$commissionAmount' },
-        totalItemsValue: { $sum: '$itemsTotal' },
-        totalDeliveryFees: { $sum: '$deliveryFee' },
-        totalOrders: { $sum: 1 },
-      },
-    },
+  const summary = await Business.aggregate([
     {
       $lookup: {
-        from: 'businesses',
-        localField: '_id',
-        foreignField: '_id',
-        as: 'business',
+        from: 'orders',
+        let: { bId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$businessId', '$$bId'] },
+                  { $eq: ['$status', 'delivered'] },
+                ],
+              },
+            },
+          },
+        ],
+        as: 'deliveredOrders',
       },
     },
-    { $unwind: '$business' },
     {
       $project: {
         businessId: '$_id',
-        businessName: '$business.name',
-        businessType: '$business.type',
-        commissionRate: '$business.commissionRate',
-        totalCommission: 1,
-        totalItemsValue: 1,
-        totalDeliveryFees: 1,
-        totalOrders: 1,
+        businessName: '$name',
+        businessType: '$type',
+        status: '$status',
+        commissionRate: '$commissionRate',
+        totalOrders: { $size: '$deliveredOrders' },
+        totalItemsValue: { $sum: '$deliveredOrders.itemsTotal' },
+        totalDeliveryFees: { $sum: '$deliveredOrders.deliveryFee' },
+        totalCommission: { $sum: '$deliveredOrders.commissionAmount' },
       },
     },
-    { $sort: { totalCommission: -1 } },
+    { $sort: { businessName: 1 } },
   ]);
 
-  const grandTotalCommission = summary.reduce((sum, s) => sum + s.totalCommission, 0);
+  const grandTotalCommission = summary.reduce((sum, s) => sum + (s.totalCommission || 0), 0);
 
   res.json({ success: true, summary, grandTotalCommission });
 });

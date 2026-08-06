@@ -14,7 +14,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { orderApi, riderApi } from '../../api/endpoints';
-import { connectSocket } from '../../api/socket';
+import { connectSocket, getActiveSocket } from '../../api/socket';
 import { useLiveRoute } from '../../hooks/useLiveRoute';
 import StatusBadge from '../../components/StatusBadge';
 
@@ -28,64 +28,97 @@ export default function ActiveDeliveryScreen({ route, navigation }) {
   const [error, setError] = useState('');
   const watchSubRef = useRef(null);
 
-  const phase = order ? (order.status === 'rider_assigned' ? 'pickup' : 'delivery') : 'pickup';
+  const phase = order ? (order.status === 'picked_up' ? 'delivery' : 'pickup') : 'pickup';
 
-  // Same road-following route as the customer sees, driven by MY live position
-  // toward whichever destination the backend says is current (nursery or customer).
+  // Turn-by-turn road route driven by MY live position toward current destination
   const { points: routePoints, eta } = useLiveRoute(orderId, myPos, phase);
 
   const load = useCallback(async () => {
     const { data } = await orderApi.getById(orderId);
     setOrder(data.order);
+
+    if (data.order.riderId?.currentLocation?.coordinates) {
+      setMyPos({
+        latitude: data.order.riderId.currentLocation.coordinates[1],
+        longitude: data.order.riderId.currentLocation.coordinates[0],
+      });
+    }
   }, [orderId]);
 
   useEffect(() => {
     load();
-    let socket = null;
+    let ioClient = null;
 
     const onStatusUpdate = () => load();
 
     const setupSocket = async () => {
-      socket = await connectSocket();
-      if (!socket || typeof socket.emit !== 'function') return;
-
-      socket.emit('order:join', orderId);
-      socket.on('order:statusUpdate', onStatusUpdate);
+      try {
+        ioClient = await connectSocket();
+        if (ioClient && typeof ioClient.emit === 'function') {
+          ioClient.emit('order:join', orderId);
+          ioClient.on('order:statusUpdate', onStatusUpdate);
+        }
+      } catch (err) {
+        console.warn('Socket connection error:', err.message);
+      }
     };
 
     setupSocket();
 
-    // Watch my own GPS while this delivery is active, pinging with activeOrderId
-    // so the backend broadcasts to the order-specific room the customer is
-    // listening on (without this, the customer never sees live movement).
+    // Watch GPS while active, getting immediate current position and pinging backend & socket room
     let cancelled = false;
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted' || cancelled) return;
-      watchSubRef.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 15 },
-        (loc) => {
-          const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
-          setMyPos(pos);
-          riderApi.pingLocation(loc.coords.longitude, loc.coords.latitude, orderId);
-          const s = getSocket();
-          if (s && typeof s.emit === 'function') {
-            s.emit('rider:location', {
-              lng: loc.coords.longitude,
-              lat: loc.coords.latitude,
-              activeOrderId: orderId,
-            });
-          }
+
+      // 1. Get immediate current position on screen mount!
+      try {
+        const currentLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        if (!cancelled && currentLoc?.coords) {
+          const initialPos = { latitude: currentLoc.coords.latitude, longitude: currentLoc.coords.longitude };
+          setMyPos(initialPos);
+          riderApi.pingLocation(currentLoc.coords.longitude, currentLoc.coords.latitude, orderId);
         }
-      );
+      } catch (err) {
+        console.warn('Initial location fetch error:', err.message);
+      }
+
+      // 2. Subscribe to continuous live updates safely
+      try {
+        watchSubRef.current = await Location.watchPositionAsync(
+          { accuracy: Location.Accuracy.High, timeInterval: 2000, distanceInterval: 2 },
+          (loc) => {
+            if (cancelled || !loc?.coords) return;
+            try {
+              const pos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+              setMyPos(pos);
+              riderApi.pingLocation(loc.coords.longitude, loc.coords.latitude, orderId);
+
+              const activeIo = ioClient || getActiveSocket();
+              if (activeIo && typeof activeIo.emit === 'function') {
+                activeIo.emit('rider:location', {
+                  lng: loc.coords.longitude,
+                  lat: loc.coords.latitude,
+                  activeOrderId: orderId,
+                });
+              }
+            } catch (err) {
+              console.warn('Location tick error:', err.message);
+            }
+          }
+        );
+      } catch (err) {
+        console.warn('Watch location error:', err.message);
+      }
     })();
 
     return () => {
       cancelled = true;
       watchSubRef.current?.remove();
-      if (socket && typeof socket.emit === 'function') {
-        socket.emit('order:leave', orderId);
-        socket.off('order:statusUpdate', onStatusUpdate);
+      const activeIo = ioClient || getActiveSocket();
+      if (activeIo && typeof activeIo.emit === 'function') {
+        activeIo.emit('order:leave', orderId);
+        activeIo.off('order:statusUpdate', onStatusUpdate);
       }
     };
   }, [orderId, load]);
